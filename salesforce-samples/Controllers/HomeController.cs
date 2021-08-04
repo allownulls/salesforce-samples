@@ -13,6 +13,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using Newtonsoft.Json.Linq;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Http;
 
 namespace salesforce_samples.Controllers
 {
@@ -47,16 +48,21 @@ namespace salesforce_samples.Controllers
         {
             return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
         }
-
-        public async Task<string> UploadAttachment(string endpoint, string servicesPath)
+        [HttpPost]
+        public async Task<string> UploadAttachment(string endpoint, string servicesPath, IFormFile file)
         {
-            var formData = new MultipartFormDataContent("--------------------------741370981761916076903434");
-                
-            FileStream fs = new FileStream("example.html", FileMode.Open, FileAccess.Read);
-            var streamContent = new StreamContent(fs);
-            streamContent.Headers.Add("Content-Type", "application/octet-stream");
+            if (file == null)
+                return "";
 
-            formData.Add(new StringContent("{\"ParentId\":\"0033O00000d0x2CQAQ\", \"Name\":\"somethingElse\"}", System.Text.Encoding.UTF8, "application/json"), "ParentId");
+            var parentId = await GetFirstContactId(endpoint, servicesPath);
+
+            var formData = new MultipartFormDataContent("--------------------------741370981761916076903434");
+                            
+            var streamContent = new StreamContent(file.OpenReadStream());
+
+            streamContent.Headers.Add("Content-Type", "application/octet-stream");
+            
+            formData.Add(new StringContent($"{{\"ParentId\":\"{parentId}\", \"Name\":\"{file.FileName}\"}}", System.Text.Encoding.UTF8, "application/json"), "ParentId");
             formData.Add(streamContent, "Body", "fileName");
 
             return await CallSalesforceApi(HttpMethod.Post, "sobjects/Attachment", formData);
@@ -81,34 +87,43 @@ namespace salesforce_samples.Controllers
             return await CallSalesforceApi(HttpMethod.Delete, $"sobjects/Attachment/{id}");
         }
 
-        public async Task<string> GetAttachments(string endpoint, string servicesPath, string name)
+        public async Task<string> GetAttachments(string endpoint, string servicesPath)
         {            
             var ret = string.Empty;
+
+            var parentId = await GetFirstContactId(endpoint, servicesPath);
 
             loginEndpoint = endpoint;
             servicesUrl = servicesPath;
 
-            var query = $"select Id from Attachment Where Name = '{name}'";
+            var query = $"select Id, Name from Attachment Where ParentId = '{parentId}'";
 
-            var response = await CallSalesforceApi(HttpMethod.Get, query);
+            var response = await RunQuery(endpoint, servicesPath, query);
 
             var ids = new List<string>();
 
             try
             {
                 var records = JsonSerializer.Deserialize<SalesforceQueryResponse<SalesforceQueryAttachment>>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                ids = records.Records.Select(e => e.Id).ToList();
+                ids = records.Records.Select(e => e.Name).ToList();
             }
             catch(Exception e)
             {
                 ret = e.Message;
             }                        
 
-            ret = string.Join("\n", ids);
+            ret = JsonSerializer.Serialize(ids);
 
             return ret;
         }
 
+        private async Task<string> GetFirstContactId(string endpoint, string servicesPath) 
+        {
+            var response = await RunQuery(endpoint, servicesPath, "select Id from contact limit 1");
+
+            var records = JsonSerializer.Deserialize<SalesforceQueryResponse<SalesforceQueryId>>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return records.Records.FirstOrDefault().Id;
+        }
 
         public async Task<string> RunQuery(string endpoint, string servicesPath, string query)
         {
@@ -185,10 +200,18 @@ namespace salesforce_samples.Controllers
             public SalesforceQueryAttributes Attributes { get; set; }
         }
 
+        public class SalesforceQueryId : ISalesforceQueryRecord
+        {
+            public SalesforceQueryAttributes Attributes { get; set; }
+            public string Id { get; set; }
+        }
+
         public class SalesforceQueryAttachment : ISalesforceQueryRecord
         {
             public SalesforceQueryAttributes Attributes { get; set; }
             public string Id { get; set; }
+
+            public string Name { get; set; }
         }
     }
 }

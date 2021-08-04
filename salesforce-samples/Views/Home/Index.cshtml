@@ -22,7 +22,10 @@
                 </div>
                 <br />
                 <div class="row">
-                    <button type="button" class="btn btn-outline-secondary" onclick="uploadAttachment()"><small>Upload Attachment</small></button>
+                    <form id="file">
+                        <input type="file" id="files" onchange="$('#file').submit()" style="display:none">
+                    </form>
+                    <button type="button" class="btn btn-outline-secondary" onclick="$('#files').focus().trigger('click');"><small>Upload Attachment</small></button>
                 </div>
             </div>
             <div class="col-md-9">
@@ -48,20 +51,34 @@
         $.get('@Url.Action("GetObjects", "Home")', data, writeResponse);
     }
     function getAttachments() {
-        var data = $.param({'endpoint' : $('#endpoint').val(), 'servicesPath': $('#servicesPath').val()});
+        var data = $.param({ 'endpoint': $('#endpoint').val(), 'servicesPath': $('#servicesPath').val()});
         $.get('@Url.Action("GetAttachments", "Home")', data, writeResponse );
     }
     function getDescriptions() {
         var data = $.param({'endpoint' : $('#endpoint').val(), 'servicesPath': $('#servicesPath').val()});
         $.get('@Url.Action("GetDescriptions", "Home")', data, writeResponse );
     }
-    function uploadAttachment() {
-        var data = $.param({'endpoint' : $('#endpoint').val(), 'servicesPath': $('#servicesPath').val()});
-        $.get('@Url.Action("UploadAttachment", "Home")', data, writeResponse);
-    }
     function writeResponse(data) {
         $("#output").text(JSON.stringify(data, null, 2).replace(/\\/g, ''));
     }
+    var uploadAttachment = function (e) {
+        e.preventDefault();
+
+        var formData = new FormData()
+        formData.append('file', $('#files').prop('files')[0]);
+        formData.append('endpoint', $('#endpoint').val());
+        formData.append('servicesPath', $('#servicesPath').val());
+
+        $.ajax({
+            url: '@Url.Action("UploadAttachment", "Home")',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: writeResponse
+        });        
+    }
+    $('#file').submit(uploadAttachment);
 
 </script>
 }
